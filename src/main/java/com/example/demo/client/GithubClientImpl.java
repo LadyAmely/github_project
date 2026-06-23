@@ -1,4 +1,3 @@
-
 package com.example.demo.client;
 
 import com.example.demo.model.GithubRepo;
@@ -32,43 +31,40 @@ public class GithubClientImpl implements GithubClient {
             return List.of();
         }
         String url = String.format("%s/users/%s/repos", githubApiBase, username);
-        try {
-            RepoDto[] resp = restTemplate.getForObject(url, RepoDto[].class);
-            if (resp == null) {
-                return List.of();
-            }
-
-            return Arrays.stream(resp)
-                    .map(r -> {
-                        GithubRepo.Owner owner = new GithubRepo.Owner(r.owner != null ? r.owner.login : null);
-
-                        List<GithubBranch> branches = List.of();
-                        try {
-                            String branchesUrl = UriComponentsBuilder.fromUriString(githubApiBase)
-                                    .pathSegment("repos", owner.login(), r.name, "branches")
-                                    .build()
-                                    .toUriString();
-
-                            BranchDto[] branchDtos = restTemplate.getForObject(branchesUrl, BranchDto[].class);
-                            if (branchDtos != null) {
-                                branches = Arrays.stream(branchDtos)
-                                        .map(b -> new GithubBranch(b.name, b.commit != null ? b.commit.sha : null))
-                                        .collect(Collectors.toList());
-                            }
-                        } catch (HttpClientErrorException.NotFound nf) {
-                        } catch (Exception ignored) {
-                        }
-
-                        return new GithubRepo(r.name, owner, branches, r.fork);
-                    })
-                    .collect(Collectors.toList());
-        } catch (HttpClientErrorException.NotFound nf) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found", nf);
-        } catch (HttpClientErrorException.BadRequest br) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bad request to upstream", br);
-        } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Upstream service error", e);
+        RepoDto[] resp = fetchUserRepos(url);
+        if (resp == null) {
+            return List.of();
         }
+
+        return Arrays.stream(resp)
+                .map(r -> {
+                    GithubRepo.Owner owner = new GithubRepo.Owner(r.owner != null ? r.owner.login : null);
+
+                    List<GithubBranch> branches = List.of();
+                    BranchDto[] branchDtos = fetchBranchesSilently(owner.login(), r.name);
+                    if (branchDtos != null) {
+                        branches = Arrays.stream(branchDtos)
+                                .map(b -> new GithubBranch(b.name, b.commit != null ? b.commit.sha : null))
+                                .collect(Collectors.toList());
+                    }
+
+                    return new GithubRepo(r.name, owner, branches, r.fork);
+                })
+                .collect(Collectors.toList());
+    }
+
+    @Override
+    public List<GithubBranch> getBranches(String owner, String repo) {
+        if (owner == null || owner.isBlank() || repo == null || repo.isBlank()) {
+            return List.of();
+        }
+        BranchDto[] branchDtos = fetchBranchesOrThrow(owner, repo);
+        if (branchDtos == null) {
+            return List.of();
+        }
+        return Arrays.stream(branchDtos)
+                .map(b -> new GithubBranch(b.name, b.commit != null ? b.commit.sha : null))
+                .collect(Collectors.toList());
     }
 
     private static class RepoDto {
@@ -90,11 +86,7 @@ public class GithubClientImpl implements GithubClient {
         public String sha;
     }
 
-    @Override
-    public List<GithubBranch> getBranches(String owner, String repo) {
-        if (owner == null || owner.isBlank() || repo == null || repo.isBlank()) {
-            return List.of();
-        }
+    private BranchDto[] fetchBranchesOrThrow(String owner, String repo) {
         try {
             String branchesUrl = UriComponentsBuilder.fromUriString(githubApiBase)
                     .pathSegment("repos", owner, repo, "branches")
@@ -102,13 +94,7 @@ public class GithubClientImpl implements GithubClient {
                     .build()
                     .toUriString();
 
-            BranchDto[] branchDtos = restTemplate.getForObject(branchesUrl, BranchDto[].class);
-            if (branchDtos == null) {
-                return List.of();
-            }
-            return Arrays.stream(branchDtos)
-                    .map(b -> new GithubBranch(b.name, b.commit != null ? b.commit.sha : null))
-                    .collect(Collectors.toList());
+            return restTemplate.getForObject(branchesUrl, BranchDto[].class);
         } catch (HttpClientErrorException.NotFound nf) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Repository or branches not found", nf);
         } catch (HttpClientErrorException.BadRequest br) {
@@ -117,4 +103,31 @@ public class GithubClientImpl implements GithubClient {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Upstream service error", e);
         }
     }
+
+    private BranchDto[] fetchBranchesSilently(String owner, String repo) {
+        try {
+            String branchesUrl = UriComponentsBuilder.fromUriString(githubApiBase)
+                    .pathSegment("repos", owner, repo, "branches")
+                    .build()
+                    .toUriString();
+            return restTemplate.getForObject(branchesUrl, BranchDto[].class);
+        } catch (HttpClientErrorException.NotFound nf) {
+            return null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private RepoDto[] fetchUserRepos(String url) {
+        try {
+            return restTemplate.getForObject(url, RepoDto[].class);
+        } catch (HttpClientErrorException.NotFound nf) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "User not found", nf);
+        } catch (HttpClientErrorException.BadRequest br) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bad request to upstream", br);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Upstream service error", e);
+        }
+    }
+
 }
