@@ -16,7 +16,6 @@ import org.springframework.web.server.ResponseStatusException;
 import com.example.demo.dto.response.ErrorResponse;
 
 import java.nio.file.AccessDeniedException;
-import java.util.Map;
 
 @Slf4j
 @ControllerAdvice
@@ -61,14 +60,13 @@ public class GlobalHandlerException {
         }
 
         @ExceptionHandler(ResponseStatusException.class)
-        public ResponseEntity<Map<String, Object>> handleResponseStatusException(ResponseStatusException ex,
+        public ResponseEntity<ErrorResponse> handleResponseStatusException(ResponseStatusException ex,
                         HttpServletRequest request) {
-                int status = ex.getStatusCode().value();
                 String message = ex.getReason() != null ? ex.getReason() : ex.getMessage();
-                Map<String, Object> body = Map.of(
-                                "status", status,
-                                "message", message);
-                return ResponseEntity.status(ex.getStatusCode()).body(body);
+                ErrorResponse errorResponse = buildErrorResponse(
+                                ex.getStatusCode(),
+                                message);
+                return ResponseEntity.status(ex.getStatusCode()).body(errorResponse);
         }
 
         @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -116,9 +114,9 @@ public class GlobalHandlerException {
         }
 
         @ExceptionHandler(UnsupportedOperationException.class)
-        private ResponseEntity<ErrorResponse> handleUnsupportedOperationException(UnsupportedOperationException ex,
+        public ResponseEntity<ErrorResponse> handleUnsupportedOperationException(UnsupportedOperationException ex,
                         HttpServletRequest request) {
-                log.warn("Warn occurred: {}", ex.getMessage(), ex);
+                log.warn("Warning occurred: {}", ex.getMessage(), ex);
                 ErrorResponse errorResponse = buildErrorResponse(
                                 HttpStatus.NOT_IMPLEMENTED,
                                 ex.getMessage());

@@ -39,7 +39,6 @@ public class GithubClientImpl implements GithubClient {
             }
 
             return Arrays.stream(resp)
-                    .parallel()
                     .map(r -> {
                         GithubRepo.Owner owner = new GithubRepo.Owner(r.owner != null ? r.owner.login : null);
 
